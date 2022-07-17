@@ -1,84 +1,92 @@
 local Raycast = {
 	origin = nil,
-
 	target = nil,
-
-	whitelist = nil,
-
-	blacklist = nil,
-
+	filter_type = nil,
+	filter_content = nil,
 	ignore_water = false,
+	gun_behavior = false,
+	part = false,
+	part_params = {},
 
-	build = function (self, origin: Vector3, target: Vector3, options: { whitelist: {}?, blacklist: {}?, ignore_water: boolean? }?)
+	build = function (self, origin: Vector3, target: Vector3, options: { filter: { ftype: string, content: {} }?, ignore_water: boolean?, gun_behavior: boolean?, part: { name: string?, parent: Instance?, color: Color3?, size: number?, transparency: number?, material: Enum.Material?, destroy: number? } | boolean? }?): {}
 		-- optional params
 		options = options or {};
-		options.whitelist = options.whitelist or nil;
-		options.blacklist = options.blacklist or nil;
-		options.ignore_water = options.ignore_water or false;
 
 		-- params
 		self.origin = origin;
 		self.target = target;
-
-		-- options
-		if options.whitelist ~= nil then 
-			self.whitelist = options.whitelist;
-		elseif options.blacklist ~= nil then 
-			self.blacklist = options.blacklist;
+		self.ignore_water = options.ignore_water or false;
+		self.gun_behavior = options.gun_behavior or false;
+		
+		if options.part then
+			self.part = true;
+			if options.part == true then options.part = {}; end
+			self.part_params.name = options.part.name or "Part";
+			self.part_params.parent = options.part.parent or workspace;
+			self.part_params.color = options.part.color or Color3.new(163/255, 162/255, 165/255);
+			self.part_params.size = options.part.size or 0.1;
+			self.part_params.transparency = options.part.transparency or 0;
+			self.part_params.material = options.part.material or Enum.Material.Plastic;
+			self.part_params.destroy = options.part.destroy or false;
 		end
 
-		-- ignorewater
-		if options.ignore_water == true then self.ignore_water = true; end
+		if options.filter then
+			if options.filter.ftype == "blacklist" then self.filter_type = "blacklist";
+			elseif options.filter.ftype == "whitelist" then self.filter_type = "whitelist";
+			else self.filter_type = nil; end 
+			
+			self.filter_content = options.filter.content or nil;
+		end
+		
+		-- return self
+		return self;
 	end,
 
-	cast = function (self, visible: { name: string?, parent: Instance?, color: Color3, size: number, transparency: number?, material: Enum.Material?, destroy: number? } | nil, gun_behavior: boolean?): RaycastResult | nil
-		-- optional params
-		gun_behavior = gun_behavior or false;
-		if visible ~= nil then
-			visible.name = visible.name or "Part";
-			visible.parent = visible.parent or workspace;
-			visible.material = visible.material or Enum.Material.Plastic;
-			visible.transparency = visible.transparency or 0;
-			visible.destroy = visible.destroy or nil;
-		end
-
+	cast = function (self): RaycastResult | nil	
+		-- creating raycast
 		if self.origin ~= nil and self.target ~= nil then
 			local raycast_params = RaycastParams.new();
 
 			-- filtertype
-			if self.whitelist ~= nil then raycast_params.FilterType = Enum.RaycastFilterType.Whitelist;
-			elseif self.blacklist ~= nil then raycast_params.FilterType = Enum.RaycastFilterType.Blacklist; end
+			if self.filter_type == "blacklist" then raycast_params.FilterType = Enum.RaycastFilterType.Blacklist;
+			elseif self.filter_type == "whitelist" then raycast_params.FilterType = Enum.RaycastFilterType.Whitelist; end
 			
 			-- ignorewater
 			raycast_params.IgnoreWater = self.ignore_water;
 
 			-- filterdescendantsinstances
-			if self.whitelist ~= nil or self.blacklist ~= nil then raycast_params.FilterDescendantsInstances = self.whitelist or self.blacklist; end
+			if self.filter_content then raycast_params.FilterDescendantsInstances = self.filter_content; end
 
 			-- raycast
 			local raycast;
 
-			if gun_behavior then raycast = workspace:Raycast(self.origin, (self.target - self.origin).Unit * ((self.target - self.origin).Magnitude + 1), raycast_params);
+			if self.gun_behavior then raycast = workspace:Raycast(self.origin, (self.target - self.origin).Unit * ((self.target - self.origin).Magnitude + 1), raycast_params);
 			else raycast = workspace:Raycast(self.origin, self.target, raycast_params) end
 
-			if visible ~= nil then
+			if self.part == true then
 				coroutine.wrap(function ()
-					local part = Instance.new("Part", workspace);
-					local distance = (self.origin - raycast.Position).magnitude;
-					
-					part.Name = visible.name;
-					part.Parent = visible.parent;
-					part.Size = Vector3.new(visible.size, visible.size, distance);
-					part.Color = visible.color;
-					part.Material = visible.material;
-					part.Transparency = visible.transparency;
-					part.CFrame = CFrame.new((self.origin + raycast.Position) / 2, raycast.Position);
-					part.Anchored = true;
-					part.CanCollide = false;
+					if raycast then
+						local part = Instance.new("Part", workspace);
+						local distance = (self.origin - raycast.Position).magnitude;
+						
+						part.Name = self.part_params.name;
+						part.Parent = self.part_params.parent;
+						part.Color = self.part_params.color;
+						part.Size = Vector3.new(self.part_params.size, self.part_params.size, distance);
+						part.Transparency = self.part_params.transparency;
+						part.Material = self.part_params.material;
+						part.CFrame = CFrame.new((self.origin + raycast.Position) / 2, raycast.Position);
+						part.Anchored = true;
+						part.CanCollide = false;
 
-					if visible.destroy ~= nil then
-						wait(visible.destroy);
-						part:Destroy();
+						if self.part_params.destroy ~= false then
+							wait(self.part_params.destroy);
+							part:Destroy();
+						end
+					else
+						-- error
+						local message = "Raycast:cast() -> tried to cast ray but performed raycast was found nil";
+						print(message);
 					end
 				end)();
 			end
@@ -86,7 +94,7 @@ local Raycast = {
 			return raycast;
 		else
 			-- error
-			local message = "muta.lua : RayCast.cast() -> tried to cast ray but parameters were found nil";
+			local message = "Raycast:cast() -> tried to cast ray but parameters were found nil";
 			print(message);
 		end
 
